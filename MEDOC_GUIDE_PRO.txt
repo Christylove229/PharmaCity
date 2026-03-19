@@ -1,0 +1,61 @@
+================================================================================
+          GUIDE DE SÉCURITÉ ET D'INTÉGRATION - MEDOC PRO
+================================================================================
+
+Ce document contient les étapes CRITIQUES pour sécuriser votre plateforme Medoc 
+et gérer les intégrations (Paiement, Stock) de façon professionnelle.
+
+--------------------------------------------------------------------------------
+1. SÉCURITÉ DES CLÉS API (PROTECTION ANTI-HACK)
+--------------------------------------------------------------------------------
+IMPORTANT : Ne mettez JAMAIS vos clés secrètes ("sk_live..." ou "SERVICE_ROLE")
+directement dans le code React/Capacitor. Un hâcheur pourrait les extraire de l'APK.
+
+A FAIRE :
+- Créez un fichier nommé ".env" à la racine de votre projet.
+- Ajoutez vos clés comme ceci :
+  VITE_SUPABASE_URL=votre_url
+  VITE_SUPABASE_ANON_KEY=votre_cle_anonyme
+  SUPABASE_SERVICE_ROLE_KEY=votre_cle_de_service_ultrasecrete
+  FEDAPAY_SECRET_KEY=sk_live_votre_cle_fedapay
+
+- Utilisez les "Supabase Edge Functions" pour les transactions FedaPay.
+- Ainsi, la clé de paiement ne quitte jamais le serveur sécurisé de Supabase.
+
+--------------------------------------------------------------------------------
+2. ÉTAPES POUR CRÉER VOTRE COMPTE FEDAPAY (OU KKIAPAY)
+--------------------------------------------------------------------------------
+1. Allez sur https://www.fedapay.com et choisissez "S'inscrire".
+2. Créez un compte "Marchand" (Business).
+3. Fournissez vos pièces justificatives (Registre de commerce ou ID pour prouver que vous êtes sérieux).
+4. Configurez votre Mobile Money : Allez dans "Payouts" et entrez votre numéro MTN/Moov principal pour recueillir l'argent total.
+5. Copiez la "Secret Key" (sk_live...) pour l'utiliser uniquement côté serveur.
+
+--------------------------------------------------------------------------------
+3. SYNCHRONISATION AUTOMATIQUE DU STOCK (LOGICIEL PHARMACIE)
+--------------------------------------------------------------------------------
+Si une pharmacie a déjà un logiciel (ex: PharmaGest) :
+Etape 1 : Demandez au technicien de la pharmacie s'ils ont une "API de Export".
+Etape 2 : Créez une "Supabase Function" dédiée qui reçoit les données XML/JSON de la pharmacie.
+Etape 3 : Configurez un Cron Job (tâche planifiée) qui met à jour les prix et les quantités toutes les heures ou à chaque vente locale.
+
+--------------------------------------------------------------------------------
+4. SÉCURITÉ DES TRANSACTIONS (ANTI-FRAUDE)
+--------------------------------------------------------------------------------
+- Code de Retrait : Le Dashboard du pharmacien contient le champ "Valider Code". Ne livrez JAMAIS sans validation du code sur l'app.
+- Split Payment : Utilisez FedaPay Payouts pour que le virement soit fait instantanément. Cela évite que l'argent reste "bloqué" chez un humain.
+- Logs de Sécurité : Chaque action (Prix changé, Stock supprimé) est enregistrée avec le nom de l'utilisateur dans Supabase (Audit Logs).
+
+--------------------------------------------------------------------------------
+5. RÉSUMÉ TECHNIQUE
+--------------------------------------------------------------------------------
+Fichiers à surveiller :
+- src/App.tsx (Le moteur des routes)
+- src/integrations/supabase/client.ts (L'accès aux données)
+- setup_full_medoc_db.sql (Le cœur de la base de données)
+
+CONSEIL : Avant de lancer l'APK officielle, faites un test "Live" avec 100 FCFA pour vérifier que l'argent arrive bien sur votre compte FedaPay.
+
+================================================================================
+Medoc - Votre santé, Votre technologie.
+================================================================================

@@ -18,7 +18,10 @@ import NotFound from "./pages/NotFound";
 import History from "./pages/History";
 import ChangePassword from "./pages/ChangePassword";
 import Cart from "./pages/Cart";
-import OrderSuccess from "./pages/OrderSuccess"; // Nouveau
+import OrderSuccess from "./pages/OrderSuccess";
+import AdminDashboard from "./pages/AdminDashboard";
+import AuthLivreur from "./pages/AuthLivreur";
+import LivreurDashboard from "./pages/LivreurDashboard"; // Nouveau
 import { SplashScreen } from "@/components/splash-screen";
 
 const queryClient = new QueryClient();
@@ -49,10 +52,13 @@ const App = () => {
                 <Route path="/results" element={<Results />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/order-success" element={<OrderSuccess />} />
+                <Route path="/admin-medoc" element={<AdminDashboard />} />
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/auth/pharmacy" element={<AuthPharmacy />} />
+                <Route path="/auth/livreur" element={<AuthLivreur />} />
                 <Route path="/auth/change-password" element={<ChangePassword />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/dashboard/livreur" element={<LivreurDashboard />} />
                 <Route path="/validation" element={<Validation />} />
                 <Route path="/mission" element={<Mission />} />
                 <Route path="/contact" element={<Contact />} />

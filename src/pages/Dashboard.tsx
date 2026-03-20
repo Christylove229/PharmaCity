@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge"; // Ajout de l'import manquant
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +24,8 @@ import {
   CreditCard, 
   History, 
   CheckCircle2,
-  Clock 
+  Clock,
+  ShoppingCart 
 } from "lucide-react";
 import { logError } from "@/utils/logger";
 
@@ -86,29 +88,29 @@ const Dashboard = () => {
     });
   }, [navigate]);
 
-  const loadOrders = () => {
-    // Simulation de commandes reçues pour démo
-    const mockOrders: Order[] = [
-      {
-        id: "CMD-8821",
-        created_at: new Date().toISOString(),
-        medicament_nom: "Paracétamol 500mg",
-        quantite: 2,
-        prix_total: 1000,
-        client_email: "client@exemple.com",
-        status: 'pending_pickup'
-      },
-      {
-        id: "CMD-8819",
-        created_at: new Date(Date.now() - 86400000).toISOString(),
-        medicament_nom: "Amoxicilline",
-        quantite: 1,
-        prix_total: 2500,
-        client_email: "jean.dupont@test.com",
-        status: 'completed'
+  const loadOrders = async (pharmacyId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("pharmacie_id", pharmacyId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        setOrders(data.map(o => ({
+          id: o.id.substring(0, 8),
+          created_at: o.created_at,
+          client_email: "Client Medoc",
+          medicament_nom: "Vente Médicament",
+          quantite: 1,
+          prix_total: o.pharmacy_net_amount,
+          status: o.status as any
+        })));
       }
-    ];
-    setOrders(mockOrders);
+    } catch (err) {
+      logError("Error orders", err);
+    }
   };
 
   const loadPharmacyData = async (userId: string) => {
@@ -131,6 +133,7 @@ const Dashboard = () => {
           payout_number: pharmacyData.payout_number || "",
         });
         loadStocks(pharmacyData.id);
+        loadOrders(pharmacyData.id);
       }
     } catch (error) {
       logError('Error loading pharmacy data:', error);

@@ -1,4 +1,4 @@
-const shouldLogInfo = import.meta.env.DEV
+﻿const shouldLogInfo = import.meta.env.DEV
   ? import.meta.env.VITE_DEBUG_LOGS !== "false"
   : import.meta.env.VITE_DEBUG_LOGS === "true";
 

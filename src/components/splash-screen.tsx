@@ -1,8 +1,8 @@
-import { Pill } from "lucide-react";
+﻿import { Pill } from "lucide-react";
 
 export const SplashScreen = () => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-r from-blue-50 to-indigo-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-r from-green-50 to-green-50">
       <div className="flex flex-col items-center">
         {/* Container du logo avec animation de "battement de coeur" (pulse) */}
         <div className="bg-primary text-white p-6 rounded-3xl shadow-2xl animate-bounce">

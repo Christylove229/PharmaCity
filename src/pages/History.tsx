@@ -9,24 +9,24 @@ import { Button } from "@/components/ui/button";
 import { Loader2, ArrowLeft, Clock, MapPin, Pill, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-interface Purchase {
+interface Order {
   id: string;
-  pharmacie_name: string;
-  medicament_name: string;
-  prix_total: number;
-  status: string;
-  payment_method: string;
   created_at: string;
+  total_amount: number;
+  status: string;
+  delivery_type: string;
+  pickup_code: string;
+  pharmacies?: { nom: string };
 }
 
 const History = () => {
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchPurchases = async () => {
+    const fetchOrders = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         
@@ -41,18 +41,18 @@ const History = () => {
         }
 
         const { data, error } = await supabase
-          .from('purchases' as any)
-          .select('*')
+          .from('orders')
+          .select('*, pharmacies(nom)')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        setPurchases(data || []);
+        setOrders(data || []);
       } catch (error) {
         console.error("Erreur de récupération de l'historique:", error);
         toast({
           title: "Erreur",
-          description: "Impossible de récupérer vos achats.",
+          description: "Impossible de récupérer vos commandes.",
           variant: "destructive",
         });
       } finally {
@@ -60,7 +60,7 @@ const History = () => {
       }
     };
 
-    fetchPurchases();
+    fetchOrders();
   }, [navigate, toast]);
 
   return (
@@ -82,13 +82,13 @@ const History = () => {
           <div className="flex justify-center items-center py-20">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
           </div>
-        ) : purchases.length === 0 ? (
+        ) : orders.length === 0 ? (
           <Card className="text-center py-16 bg-muted/30">
             <CardContent>
               <Pill className="h-16 w-16 mx-auto text-muted-foreground mb-4 opacity-50" />
-              <h2 className="text-xl font-semibold mb-2">Aucun achat récent</h2>
-              <p className="text-muted-foreground mb-6">Vous n'avez pas encore effectué d'achat ou de réservation.</p>
-              <Link to="/">
+              <h2 className="text-xl font-semibold mb-2">Aucune commande récente</h2>
+              <p className="text-muted-foreground mb-6">Vous n'avez pas encore effectué d'achat sur PharmaCity.</p>
+              <Link to="/results">
                 <Button>
                   Rechercher un médicament
                 </Button>
@@ -96,37 +96,50 @@ const History = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {purchases.map((purchase) => (
-              <Card key={purchase.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="pb-3 flex flex-row items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg flex items-center">
-                      <Pill className="h-4 w-4 mr-2 text-blue-500" />
-                      {purchase.medicament_name}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1 flex items-center">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      {purchase.pharmacie_name}
-                    </p>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {orders.map((order) => (
+              <Card key={order.id} className="hover:shadow-md transition-shadow border-green-100">
+                <CardHeader className="pb-3 border-b border-slate-50 relative bg-slate-50/50">
+                  <div className="flex justify-between items-start mb-2">
+                     <Badge variant="outline" className={`border-none ${order.delivery_type === 'delivery' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {order.delivery_type === 'delivery' ? 'LIVRAISON' : 'RETRAIT PHARMACIE'}
+                     </Badge>
+                     <span className="text-xs font-mono text-slate-400">CMD-{order.id.substring(0, 6).toUpperCase()}</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    {purchase.prix_total} FCFA
-                  </Badge>
+                  <CardTitle className="text-lg flex items-center">
+                    <MapPin className="h-4 w-4 mr-2 text-green-600" />
+                    {order.pharmacies?.nom || "Pharmacie PharmaCity"}
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center text-sm border-t pt-3 mt-1">
-                    <div className="text-muted-foreground">
-                      {new Date(purchase.created_at).toLocaleDateString("fr-FR", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric"
+                <CardContent className="pt-4 space-y-4">
+                  <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <span className="text-sm font-bold text-slate-600">Montant payé</span>
+                    <span className="font-bold text-green-700">{order.total_amount} FCFA</span>
+                  </div>
+                  
+                  <div className="text-center p-4 bg-sky-50 rounded-xl border border-sky-100">
+                     <p className="text-[10px] uppercase font-bold text-sky-600 tracking-wider mb-1">
+                        Ton Code Universel 🔑
+                     </p>
+                     <p className="font-mono text-3xl font-black text-slate-900 tracking-[0.2em]">{order.pickup_code}</p>
+                     <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                        {order.delivery_type === 'delivery' 
+                           ? "Ceci est ta clé de sécurité. Remets ce code uniquement à ton LIVREUR quand il est devant toi." 
+                           : "Montre ce code au PHARMACIEN pour récupérer ton sachet médical."}
+                     </p>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-xs text-muted-foreground pt-2">
+                    <div>
+                      {new Date(order.created_at).toLocaleDateString("fr-FR", {
+                        day: "numeric", month: "long", hour: "2-digit", minute:"2-digit"
                       })}
                     </div>
-                    <div className="flex items-center text-green-600 font-medium">
-                      <CheckCircle2 className="h-4 w-4 mr-1" />
-                      Confirmé
-                    </div>
+                    {order.status === 'completed' ? (
+                       <span className="flex items-center text-green-600 font-bold"><CheckCircle2 className="w-3 h-3 mr-1"/> Terminée</span>
+                    ) : (
+                       <span className="flex items-center text-orange-500 font-bold"><Clock className="w-3 h-3 mr-1"/> En cours</span>
+                    )}
                   </div>
                 </CardContent>
               </Card>

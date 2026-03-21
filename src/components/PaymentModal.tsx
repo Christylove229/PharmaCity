@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,7 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
             payment_method: 'digital'
           });
 
-          // 1. Déduction locale (Stock de Medoc sur Supabase) 
+          // 1. Déduction locale (Stock de PharmaCity sur Supabase) 
           // Note : on pourrait d'abord vérifier dans pharmacy_api_configs si on DOIT déduire localement.
           // Mais dans tous les cas, on déduit en local pour l'affichage de l'appli.
           await supabase.rpc('decrease_stock', {
@@ -79,7 +79,7 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
                   }
                 });
              } else {
-                // Option B : Géré uniquement par Medoc
+                // Option B : Géré uniquement par PharmaCity
                 await supabase.rpc('decrease_stock', {
                   p_pharmacie_name: pharmacyName,
                   p_medicament_name: medicationName,
@@ -179,7 +179,7 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
                       <Input id="cvc" placeholder="123" required />
                     </div>
                   </div>
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={loading}>
+                  <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
                     {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     {loading ? "Traitement..." : `Payer ${displayPrice} FCFA`}
                   </Button>

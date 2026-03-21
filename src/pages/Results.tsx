@@ -51,6 +51,7 @@ const Results = () => {
   const [sortBy, setSortBy] = useState<"pharmacie" | "distance" | "nom_medicament" | "disponibilite">("pharmacie");
   const [isNearbySearch, setIsNearbySearch] = useState(false);
   const [locationSource, setLocationSource] = useState<string>("");
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const { toast } = useToast();
   
   // Utilisation du panier
@@ -66,7 +67,7 @@ const Results = () => {
     if (digits.startsWith('229')) digits = digits.substring(3);
     if (digits.startsWith('0')) digits = digits.substring(1);
     const internationalDigits = `229${digits}`;
-    const message = `Bonjour ${pharmacyName},\n\nJe vous contacte via Medoc pour le médicament « ${medicationName} ». Est-il disponible ?`;
+    const message = `Bonjour ${pharmacyName},\n\nJe vous contacte via PharmaCity pour le médicament « ${medicationName} ». Est-il disponible ?`;
     window.open(`https://wa.me/${internationalDigits}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
@@ -123,18 +124,28 @@ const Results = () => {
     } else setLoading(false);
   }, [searchParams, authLoading]);
 
+  const getQty = (id: string) => quantities[id] || 1;
+  const updateQty = (id: string, delta: number) => {
+     setQuantities({ ...quantities, [id]: Math.max(1, getQty(id) + delta) });
+  };
+
   const handleAddToCart = (result: SearchResult) => {
+    const stockId = result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`;
+    const qty = getQty(stockId);
+    
     addToCart({
-      stock_id: result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`,
+      stock_id: stockId,
       medicament_nom: result.medicament_nom,
       pharmacie_id: result.pharmacie_id,
       pharmacie_nom: result.pharmacie_nom,
       prix: result.prix || 0,
-      quantite: 1
+      quantite: qty
     });
+    setQuantities({ ...quantities, [stockId]: 1 }); // Reset après ajout
+
     toast({
       title: "Ajouté au panier 🛒",
-      description: `${result.medicament_nom} est maintenant dans votre panier.`,
+      description: `${qty}x ${result.medicament_nom} dans votre panier.`,
     });
   };
 
@@ -179,7 +190,8 @@ const Results = () => {
                    <SearchInput 
                      placeholder="Rechercher un autre médicament..." 
                      value={searchTerm} 
-                     onSearch={(v) => { setSearchTerm(v); fetchResults(v); }}
+                     onChange={(e) => setSearchTerm(e.target.value)}
+                     onSearch={(v) => fetchResults(v)}
                    />
                 </div>
                 <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
@@ -206,7 +218,7 @@ const Results = () => {
                     <CardHeader className="pb-2">
                        <div className="flex justify-between items-start">
                           <div>
-                            <Badge className="mb-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border-none">💊 {result.medicament_nom}</Badge>
+                            <Badge className="mb-2 bg-green-50 text-green-700 hover:bg-green-100 border-none">💊 {result.medicament_nom}</Badge>
                             <CardTitle className="text-xl font-bold">{result.pharmacie_nom}</CardTitle>
                             <p className="text-sm text-slate-500 flex items-center mt-1"><MapPin className="h-3 w-3 mr-1" /> {result.pharmacie_adresse}</p>
                           </div>
@@ -225,14 +237,21 @@ const Results = () => {
                                 {result.disponible ? "EN STOCK" : "RUPTURE"}
                              </Badge>
                           </div>
-                          <div className="flex gap-2 w-full md:w-auto">
-                             <Button 
-                               onClick={() => handleAddToCart(result)}
-                               disabled={!result.disponible} 
-                               className="flex-1 md:flex-none bg-primary shadow-lg shadow-primary/20"
-                             >
-                                <PlusCircle className="mr-2 h-4 w-4" /> Ajouter au panier
-                             </Button>
+                           <div className="flex gap-2 w-full md:w-auto items-center">
+                              {/* Sélecteur de quantité */}
+                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg p-1 mr-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 rounded" onClick={() => updateQty(result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`, -1)} disabled={getQty(result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`) <= 1}>-</Button>
+                                <span className="w-6 text-center font-bold text-sm">{getQty(result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`)}</span>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 rounded" onClick={() => updateQty(result.stock_id || `${result.pharmacie_id}-${result.medicament_id}`, 1)}>+</Button>
+                              </div>
+
+                              <Button 
+                                onClick={() => handleAddToCart(result)}
+                                disabled={!result.disponible} 
+                                className="flex-1 md:flex-none bg-primary shadow-lg shadow-primary/20"
+                              >
+                                 <PlusCircle className="mr-2 h-4 w-4" /> Ajouter
+                              </Button>
                              <Button 
                                variant="outline"
                                onClick={() => openWhatsApp(result.pharmacie_telephone, result.pharmacie_nom, result.medicament_nom)}

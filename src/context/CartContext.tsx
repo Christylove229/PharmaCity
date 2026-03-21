@@ -26,7 +26,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Charger le panier depuis le stockage local au démarrage
   useEffect(() => {
-    const savedCart = localStorage.getItem('medoc_cart');
+    const savedCart = localStorage.getItem('pharmacity_cart');
     if (savedCart) {
       setCart(JSON.parse(savedCart));
     }
@@ -34,20 +34,21 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Sauvegarder le panier quand il change
   useEffect(() => {
-    localStorage.setItem('medoc_cart', JSON.stringify(cart));
+    localStorage.setItem('pharmacity_cart', JSON.stringify(cart));
   }, [cart]);
 
   const addToCart = (newItem: CartItem) => {
+    const qtyToAdd = newItem.quantite || 1;
     setCart((prevCart) => {
       const existingItem = prevCart.find((item) => item.stock_id === newItem.stock_id);
       if (existingItem) {
         return prevCart.map((item) =>
           item.stock_id === newItem.stock_id
-            ? { ...item, quantite: item.quantite + 1 }
+            ? { ...item, quantite: item.quantite + qtyToAdd }
             : item
         );
       }
-      return [...prevCart, { ...newItem, quantite: 1 }];
+      return [...prevCart, { ...newItem, quantite: qtyToAdd }];
     });
   };
 
@@ -57,7 +58,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => {
     setCart([]);
-    localStorage.removeItem('medoc_cart');
+    localStorage.removeItem('pharmacity_cart');
   };
 
   // CALCULS FINANCIERS

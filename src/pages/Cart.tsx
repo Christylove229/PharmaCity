@@ -25,8 +25,11 @@ const Cart = () => {
   const [deliveryInfo, setDeliveryInfo] = useState({
     adresse: "",
     destinataire: "",
+    telephone: "",
     quartier: ""
   });
+  const [clientGps, setClientGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const navigate = useNavigate();
 
   const DELIVERY_FEE = 1000; // Forfait livraison
@@ -52,14 +55,94 @@ const Cart = () => {
     );
   }
 
-  const handleCheckout = () => {
+  const getClientLocation = () => {
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setClientGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsLoading(false);
+      },
+      () => setGpsLoading(false),
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const handleCheckout = async () => {
     if (deliveryMode === 'delivery' && !deliveryInfo.adresse) {
       alert("Veuillez saisir une adresse de livraison !");
       return;
     }
-    // Simulation de paiement
+
     const randomCode = Math.floor(Math.random() * 900000 + 100000);
-    navigate(`/order-success?code=${randomCode}`);
+
+    const { data: { session } } = await import("@/integrations/supabase/client")
+      .then(m => m.supabase.auth.getSession());
+
+    if (session) {
+      const { supabase } = await import("@/integrations/supabase/client");
+
+      // Grouper les montants par pharmacie ID pour générer les commandes distinctes
+      const ordersToInsert = [];
+      const groupedByPharmacie = cart.reduce((acc, item) => {
+         if (!acc[item.pharmacie_id]) {
+            acc[item.pharmacie_id] = 0;
+         }
+         acc[item.pharmacie_id] += (item.prix * item.quantite);
+         return acc;
+      }, {} as Record<string, number>);
+
+      // On insère une ligne "orders" *par pharmacie* impliquée dans le panier
+      for (const [pharmacieId, totalBrut] of Object.entries(groupedByPharmacie)) {
+         const pharmacyCommission = Math.floor(totalBrut * 0.01);
+         const pharmacyNet = Math.floor(totalBrut * 0.99);
+         
+         ordersToInsert.push({
+            user_id: session.user.id,
+            pharmacie_id: pharmacieId,
+            delivery_type: deliveryMode,
+            delivery_address: deliveryMode === 'delivery' ? deliveryInfo.adresse : null,
+            delivery_city: deliveryInfo.quartier || null,
+            destinataire_nom: deliveryMode === 'delivery' ? deliveryInfo.destinataire : null,
+            destinataire_telephone: deliveryMode === 'delivery' ? deliveryInfo.telephone : null,
+            client_latitude: clientGps?.lat ?? null,
+            client_longitude: clientGps?.lng ?? null,
+            total_amount: totalBrut + (deliveryMode === 'delivery' ? DELIVERY_FEE : 0),
+            app_commission: pharmacyCommission,
+            pharmacy_net_amount: pharmacyNet,
+            delivery_fee: deliveryMode === 'delivery' ? DELIVERY_FEE : 0,
+            pickup_code: randomCode.toString(),
+            status: 'pending',
+            delivery_status: deliveryMode === 'delivery' ? 'not_started' : null,
+         });
+      }
+
+      const { data: insertedOrders, error } = await supabase.from('orders').insert(ordersToInsert).select();
+      if (error) {
+        console.error("Erreur insertion commande:", error);
+        alert("Une erreur serveur empêche la finalisation de la commande : " + error.message);
+        return;
+      }
+
+      if (insertedOrders) {
+        const orderItemsToInsert = [];
+        for (const order of insertedOrders) {
+          const itemsForOrder = cart.filter(item => item.pharmacie_id === order.pharmacie_id);
+          for (const item of itemsForOrder) {
+            orderItemsToInsert.push({
+              order_id: order.id,
+              stock_id: item.stock_id,
+              medicament_nom: item.medicament_nom,
+              quantite: item.quantite,
+              prix_unitaire: item.prix
+            });
+          }
+        }
+        await supabase.from('order_items').insert(orderItemsToInsert);
+      }
+    }
+
+    navigate(`/order-success?code=${randomCode}&mode=${deliveryMode}`);
     clearCart();
   };
 
@@ -88,7 +171,7 @@ const Cart = () => {
                     onClick={() => setDeliveryMode('pickup')}
                     className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 transition-all ${
                       deliveryMode === 'pickup' 
-                      ? 'border-blue-600 bg-blue-50 text-blue-700' 
+                      ? 'border-blue-600 bg-green-50 text-green-700' 
                       : 'border-slate-100 hover:border-slate-200 text-slate-500'
                     }`}
                   >
@@ -99,7 +182,7 @@ const Cart = () => {
                     onClick={() => setDeliveryMode('delivery')}
                     className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 transition-all ${
                       deliveryMode === 'delivery' 
-                      ? 'border-blue-600 bg-blue-50 text-blue-700' 
+                      ? 'border-blue-600 bg-green-50 text-green-700' 
                       : 'border-slate-100 hover:border-slate-200 text-slate-500'
                     }`}
                   >
@@ -112,23 +195,36 @@ const Cart = () => {
                   <div className="mt-8 space-y-6 p-6 bg-slate-50 rounded-2xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label className="flex items-center gap-2"><User className="w-4 h-4" /> Nom du destinataire</Label>
+                        <Label className="flex items-center gap-2"><User className="w-4 h-4" /> Destinataire (Qui reçoit ?)</Label>
                         <Input 
-                          placeholder="Ex: Mme Dossou (Pour un proche)" 
+                          placeholder="Ex: Moi-même ou M. Dossou..." 
                           value={deliveryInfo.destinataire}
                           onChange={e => setDeliveryInfo({...deliveryInfo, destinataire: e.target.value})}
                           className="bg-white border-none shadow-sm"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Quartier</Label>
+                        <Label className="flex items-center gap-2" htmlFor="tel-destinataire">
+                           Numéro de téléphone (À appeler)
+                        </Label>
                         <Input 
-                          placeholder="Ex: Akpakpa" 
-                          value={deliveryInfo.quartier}
-                          onChange={e => setDeliveryInfo({...deliveryInfo, quartier: e.target.value})}
+                          id="tel-destinataire"
+                          type="tel"
+                          placeholder="Ex: +229 01020304" 
+                          value={deliveryInfo.telephone}
+                          onChange={e => setDeliveryInfo({...deliveryInfo, telephone: e.target.value})}
                           className="bg-white border-none shadow-sm"
                         />
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2"><MapPin className="w-4 h-4" /> Quartier</Label>
+                      <Input 
+                        placeholder="Ex: Akpakpa (Près du commissariat)" 
+                        value={deliveryInfo.quartier}
+                        onChange={e => setDeliveryInfo({...deliveryInfo, quartier: e.target.value})}
+                        className="bg-white border-none shadow-sm"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2"><Truck className="w-4 h-4" /> Adresse exacte / Points de repère</Label>
@@ -139,6 +235,25 @@ const Cart = () => {
                         className="bg-white border-none shadow-sm"
                       />
                     </div>
+
+                    {/* Bouton partager position GPS */}
+                    <button
+                      type="button"
+                      onClick={getClientLocation}
+                      disabled={gpsLoading || !!clientGps}
+                      className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all border-2 ${
+                        clientGps
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'bg-white border-dashed border-slate-300 text-slate-500 hover:border-green-400 hover:text-green-600'
+                      }`}
+                    >
+                      <MapPin className={`w-4 h-4 ${gpsLoading ? 'animate-spin' : ''}`} />
+                      {clientGps
+                        ? `✅ Position GPS partagée (${clientGps.lat.toFixed(3)}, ${clientGps.lng.toFixed(3)})`
+                        : gpsLoading
+                        ? "Récupération de votre position..."
+                        : "📍 Partager ma position GPS (optionnel, aide le livreur)"}
+                    </button>
                   </div>
                 )}
               </CardContent>
@@ -188,7 +303,7 @@ const Cart = () => {
                 </div>
                 <div className="flex justify-between text-slate-500 text-sm">
                   <span>Frais de service (1%)</span>
-                  <span className="font-medium text-blue-600">+{appCommission} FCFA</span>
+                  <span className="font-medium text-green-600">+{appCommission} FCFA</span>
                 </div>
                 {deliveryMode === 'delivery' && (
                   <div className="flex justify-between text-slate-500 text-sm">
@@ -201,17 +316,17 @@ const Cart = () => {
                   <span className="text-2xl font-black text-primary">{finalTotal} FCFA</span>
                 </div>
                 
-                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mt-4 space-y-2">
-                   <div className="flex items-center text-blue-700 font-bold text-[10px] uppercase">
+                <div className="bg-green-50 p-4 rounded-xl border border-green-100 mt-4 space-y-2">
+                   <div className="flex items-center text-green-700 font-bold text-[10px] uppercase">
                       <AlertCircle className="h-3 w-3 mr-1" /> Sécurité Paiement
                    </div>
-                   <p className="text-[10px] text-blue-600 leading-relaxed italic">
-                      Votre argent est sécurisé par Medoc et reversé après réception du médicament.
+                   <p className="text-[10px] text-green-600 leading-relaxed italic">
+                      Votre argent est sécurisé par PharmaCity et reversé après réception du médicament.
                    </p>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col space-y-3">
-                <Button onClick={handleCheckout} className="w-full py-8 text-lg font-black shadow-lg shadow-primary/20 bg-blue-600">
+                <Button onClick={handleCheckout} className="w-full py-8 text-lg font-black shadow-lg shadow-primary/20 bg-green-600">
                   <Wallet className="mr-2 h-5 w-5" />
                   CONFIRMER LE PAIEMENT
                 </Button>

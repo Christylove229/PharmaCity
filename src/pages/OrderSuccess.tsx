@@ -9,6 +9,7 @@ const OrderSuccess = () => {
   const [searchParams] = useSearchParams();
   const orderId = searchParams.get('orderId') || "CMD-"+Math.floor(Math.random()*9000+1000);
   const pickupCode = searchParams.get('code') || Math.floor(Math.random()*900000+100000).toString();
+  const mode = searchParams.get('mode') || 'pickup';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
@@ -41,8 +42,14 @@ const OrderSuccess = () => {
                <div className="flex items-start">
                   <MapPin className="h-4 w-4 text-primary mr-2 mt-1" />
                   <div>
-                     <p className="text-sm font-bold text-slate-800">Présentez ce code à la pharmacie</p>
-                     <p className="text-xs text-slate-500 leading-relaxed">Le pharmacien validera ce code pour vous remettre vos médicaments.</p>
+                     <p className="text-sm font-bold text-slate-800">
+                        {mode === 'delivery' ? "DONNEZ CE CODE AU LIVREUR À SON ARRIVÉE" : "PRÉSENTEZ CE CODE À LA PHARMACIE"}
+                     </p>
+                     <p className="text-xs text-slate-500 leading-relaxed">
+                        {mode === 'delivery' 
+                          ? "Le livreur vous demandera ce code avant de vous remettre le colis. C'est votre clé de sécurité." 
+                          : "Le pharmacien validera ce code pour vous remettre vos médicaments."}
+                     </p>
                   </div>
                </div>
             </div>

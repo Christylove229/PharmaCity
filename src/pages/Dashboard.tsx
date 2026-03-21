@@ -13,7 +13,9 @@ import { Switch } from "@/components/ui/switch";
 import { 
   Plus, 
   Trash2, 
-  Save, 
+  Edit2,
+  Check,
+  Save,  
   LogOut, 
   Loader2, 
   Pill, 
@@ -31,12 +33,16 @@ import { logError } from "@/utils/logger";
 
 interface Order {
   id: string;
+  raw_id: string;
   created_at: string;
   medicament_nom: string;
   quantite: number;
   prix_total: number;
   client_email: string;
-  status: 'pending_pickup' | 'completed' | 'cancelled';
+  status: string;
+  delivery_type: string;
+  delivery_status: string;
+  pickup_code: string;
 }
 
 const Dashboard = () => {
@@ -49,6 +55,7 @@ const Dashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [showNewMedicamentForm, setShowNewMedicamentForm] = useState(false);
+  const [inputCodes, setInputCodes] = useState<Record<string, string>>({});
   
   const [pharmacyForm, setPharmacyForm] = useState({
     nom: "",
@@ -56,6 +63,7 @@ const Dashboard = () => {
     horaires: "",
     telephone: "",
     payout_number: "", // Nouveau: Numéro de retrait auto
+    ville: "",
   });
   
   const [newStock, setNewStock] = useState({
@@ -64,6 +72,10 @@ const Dashboard = () => {
     prix: "",
     disponible: true,
   });
+
+  const [editingStockId, setEditingStockId] = useState<string | null>(null);
+  const [editQuantite, setEditQuantite] = useState("");
+  const [editPrix, setEditPrix] = useState("");
 
   const [newMedicament, setNewMedicament] = useState({
     nom: "",
@@ -98,15 +110,28 @@ const Dashboard = () => {
 
       if (error) throw error;
       if (data) {
-        setOrders(data.map(o => ({
-          id: o.id.substring(0, 8),
-          created_at: o.created_at,
-          client_email: "Client Medoc",
-          medicament_nom: "Vente Médicament",
-          quantite: 1,
-          prix_total: o.pharmacy_net_amount,
-          status: o.status as any
-        })));
+        const { data: itemsData } = await supabase.from('order_items').select('*').in('order_id', data.map(o => o.id));
+
+        setOrders(data.map(o => {
+          const items = itemsData?.filter(i => i.order_id === o.id) || [];
+          const medSummary = items.length > 0 
+            ? items.map(i => `${i.medicament_nom} (x${i.quantite})`).join(', ')
+            : "Commande";
+
+          return {
+            id: o.id.substring(0, 8),
+            raw_id: o.id,
+            created_at: o.created_at,
+            client_email: o.destinataire_nom || "Client",
+            medicament_nom: medSummary,
+            quantite: items.reduce((sum, i) => sum + i.quantite, 0),
+            prix_total: o.pharmacy_net_amount,
+            status: o.status,
+            delivery_type: o.delivery_type,
+            delivery_status: o.delivery_status,
+            pickup_code: o.pickup_code
+          };
+        }));
       }
     } catch (err) {
       logError("Error orders", err);
@@ -131,6 +156,7 @@ const Dashboard = () => {
           horaires: pharmacyData.horaires || "",
           telephone: pharmacyData.telephone || "",
           payout_number: pharmacyData.payout_number || "",
+          ville: pharmacyData.ville || "",
         });
         loadStocks(pharmacyData.id);
         loadOrders(pharmacyData.id);
@@ -141,6 +167,18 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (pharmacy) {
+      const channel = supabase
+        .channel('pharmacy_orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `pharmacie_id=eq.${pharmacy.id}` }, () => {
+           loadOrders(pharmacy.id);
+        })
+        .subscribe();
+      return () => { supabase.removeChannel(channel); };
+    }
+  }, [pharmacy]);
 
   const loadStocks = async (pharmacyId: string) => {
     try {
@@ -213,6 +251,22 @@ const Dashboard = () => {
     }
   };
 
+  const updateStock = async (stockId: string) => {
+    if (!editQuantite || !editPrix) return;
+    try {
+      const { error } = await supabase.from("stocks").update({
+        quantite: parseInt(editQuantite),
+        prix: parseFloat(editPrix)
+      }).eq("id", stockId);
+      if (error) throw error;
+      toast({ title: "Stock mis à jour avec succès ✅" });
+      setEditingStockId(null);
+      loadStocks(pharmacy.id);
+    } catch (error: any) {
+      toast({ title: "Erreur lors de la mise à jour", description: error.message, variant: "destructive" });
+    }
+  };
+
   const deleteStock = async (stockId: string) => {
     try {
       const { error } = await supabase.from("stocks").delete().eq("id", stockId);
@@ -256,7 +310,7 @@ const Dashboard = () => {
       <header className="bg-white border-b sticky top-0 z-10 px-6 py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center space-x-2">
           <Pill className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-bold tracking-tight">Medoc <span className="text-primary">PRO</span></h1>
+          <h1 className="text-xl font-bold tracking-tight">PharmaCity <span className="text-primary">PRO</span></h1>
         </div>
         <div className="flex items-center space-x-4">
           <span className="text-sm font-medium text-slate-500 hidden md:block">{user?.email}</span>
@@ -287,7 +341,7 @@ const Dashboard = () => {
                    <CardContent className="pt-6">
                       <p className="text-green-100 text-xs font-bold uppercase">Solde Total Disponible</p>
                       <h3 className="text-3xl font-black mt-1">
-                         {orders.reduce((acc, o) => acc + (o.status === 'completed' ? o.prix_total * 0.99 : 0), 0)} FCFA
+                         {orders.reduce((acc, o) => acc + (o.status === 'completed' ? o.prix_total : 0), 0)} FCFA
                       </h3>
                       <p className="text-[10px] text-green-100 mt-2 italic">Calculé après votre commission de 99%</p>
                    </CardContent>
@@ -335,32 +389,67 @@ const Dashboard = () => {
                                   <td className="px-6 py-4 text-slate-600">{order.client_email}</td>
                                   <td className="px-6 py-4 font-bold text-slate-800">{order.medicament_nom} x{order.quantite}</td>
                                   <td className="px-6 py-4 text-right font-black text-green-600">
-                                     {(order.prix_total * 0.99).toFixed(0)} FCFA
+                                     {order.prix_total} FCFA
                                   </td>
                                   <td className="px-6 py-4">
                                      <div className="flex flex-col gap-1">
-                                        {order.status === 'pending_pickup' ? (
-                                           <Badge className="bg-orange-100 text-orange-600 hover:bg-orange-100 pointer-events-none">
-                                              À retirer
-                                           </Badge>
-                                        ) : (
+                                        {order.status === 'completed' ? (
                                            <Badge className="bg-green-100 text-green-600 hover:bg-green-100 pointer-events-none">
                                               Terminé
                                            </Badge>
+                                        ) : (
+                                           <Badge className="bg-orange-100 text-orange-600 hover:bg-orange-100 pointer-events-none uppercase font-black text-[10px]">
+                                              {order.delivery_type === 'delivery' ? 'À REMETTRE AU LIVREUR 🛵' : 'À RETIRER PAR LE CLIENT 👤'}
+                                           </Badge>
                                         )}
-                                        <Badge variant="outline" className="text-[9px] border-blue-200 text-blue-500 font-bold">
-                                           ⚡ Virement Automatique OK
-                                        </Badge>
+                                        {order.delivery_type === 'delivery' && order.delivery_status === 'finding_driver' && (
+                                           <Badge variant="outline" className="text-[9px] border-blue-200 text-blue-600 font-bold bg-blue-50">Livreur en route vers officine</Badge>
+                                        )}
+                                        {order.status !== 'completed' && (
+                                           <Badge className="bg-green-600 text-white hover:bg-green-600 pointer-events-none text-[9px] font-bold">
+                                              ✅ PAIEMENT VÉRIFIÉ (FedaPay)
+                                           </Badge>
+                                        )}
                                      </div>
                                   </td>
                                   <td className="px-6 py-4 text-center">
-                                     {order.status === 'pending_pickup' && (
+                                     {order.status !== 'completed' && order.delivery_type === 'pickup' && (
                                         <div className="flex flex-col gap-2 min-w-[120px]">
-                                           <Input placeholder="Code Client" className="h-8 text-[10px] text-center font-bold" />
-                                           <Button size="sm" className="h-7 text-[10px]" onClick={() => {
-                                              toast({ title: "Médicament livré ✅", description: "Le code est valide." });
-                                              loadOrders();
-                                           }}>Valider</Button>
+                                           <Input 
+                                              placeholder="Code Client" 
+                                              value={inputCodes[order.id] || ''}
+                                              onChange={(e) => setInputCodes({...inputCodes, [order.id]: e.target.value})}
+                                              className="h-8 text-[10px] text-center font-bold uppercase" 
+                                           />
+                                           <Button size="sm" className="h-7 text-[10px]" onClick={async () => {
+                                              if (inputCodes[order.id]?.trim().toUpperCase() !== order.pickup_code.toUpperCase()) {
+                                                 toast({ title: "Code invalide", description: "Ce n'est pas le bon code.", variant: "destructive" });
+                                                 return;
+                                              }
+                                              const { error } = await supabase.from('orders').update({status: 'completed'}).eq('id', order.raw_id);
+                                              if(!error) {
+                                                // Réduire le stock
+                                                const { data: items } = await supabase.from('order_items').select('stock_id, quantite').eq('order_id', order.raw_id);
+                                                if (items) {
+                                                   for (const item of items) {
+                                                      const { data: s } = await supabase.from('stocks').select('quantite').eq('id', item.stock_id).single();
+                                                      if (s) {
+                                                         await supabase.from('stocks').update({ quantite: Math.max(0, s.quantite - item.quantite) }).eq('id', item.stock_id);
+                                                      }
+                                                   }
+                                                   loadStocks(pharmacy.id);
+                                                }
+                                                toast({ title: "Médicament remis ✅", description: "Le solde a été mis à jour !" });
+                                                if (pharmacy) loadOrders(pharmacy.id);
+                                              }
+                                           }}>Valider Retrait</Button>
+                                        </div>
+                                     )}
+                                     {order.status !== 'completed' && order.delivery_type === 'delivery' && (
+                                        <div className="text-[10px] font-bold text-slate-400 text-left space-y-1">
+                                           {order.delivery_status === 'not_started' && <p>Attente d'un livreur...</p>}
+                                           {order.delivery_status === 'finding_driver' && <p className="text-blue-600">Remettez la CMDE <b>{order.id.substring(0,6).toUpperCase()}</b> au livreur</p>}
+                                           {order.delivery_status === 'on_the_way' && <p className="text-orange-500">Colis récupéré par le livreur</p>}
                                         </div>
                                      )}
                                   </td>
@@ -397,6 +486,7 @@ const Dashboard = () => {
                               <div className="bg-slate-50 p-3 rounded-lg border border-primary/20 space-y-3">
                                  <Input placeholder="Nom du médicament" value={newMedicament.nom} onChange={e => setNewMedicament({...newMedicament, nom: e.target.value})} className="h-8 text-sm" />
                                  <Input placeholder="Forme (ex: Sirop)" value={newMedicament.forme} onChange={e => setNewMedicament({...newMedicament, forme: e.target.value})} className="h-8 text-sm" />
+                                 <Input placeholder="Dosage (ex: 500mg)" value={newMedicament.dosage} onChange={e => setNewMedicament({...newMedicament, dosage: e.target.value})} className="h-8 text-sm" />
                                  <Button size="sm" className="w-full h-8" onClick={addNewMedicament}>Créer</Button>
                               </div>
                            ) : (
@@ -437,18 +527,37 @@ const Dashboard = () => {
                                     <h4 className="font-bold text-slate-800 text-lg leading-none">{stock.medicament_nom}</h4>
                                     <p className="text-xs text-slate-400 mt-1">{stock.medicament_forme || "Format standard"}</p>
                                  </div>
-                                 <Button variant="ghost" size="icon" onClick={() => deleteStock(stock.stock_id)} className="text-slate-300 hover:text-red-500 h-8 w-8">
-                                    <Trash2 className="h-4 w-4" />
-                                 </Button>
-                              </div>
-                              <div className="grid grid-cols-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                 <div>
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold">Quantité</p>
-                                    <p className="text-xl font-black text-slate-700">{stock.quantite}</p>
+                                 <div className="flex gap-1">
+                                    {editingStockId === stock.stock_id ? (
+                                       <Button variant="ghost" size="icon" onClick={() => updateStock(stock.stock_id)} className="text-green-500 hover:text-green-600 h-8 w-8 bg-green-50">
+                                          <Check className="h-4 w-4" />
+                                       </Button>
+                                    ) : (
+                                       <Button variant="ghost" size="icon" onClick={() => { setEditingStockId(stock.stock_id); setEditQuantite(stock.quantite.toString()); setEditPrix(stock.prix.toString()); }} className="text-slate-300 hover:text-blue-500 h-8 w-8">
+                                          <Edit2 className="h-4 w-4" />
+                                       </Button>
+                                    )}
+                                    <Button variant="ghost" size="icon" onClick={() => deleteStock(stock.stock_id)} className="text-slate-300 hover:text-red-500 h-8 w-8">
+                                       <Trash2 className="h-4 w-4" />
+                                    </Button>
                                  </div>
-                                 <div className="text-right">
-                                    <p className="text-[10px] text-slate-400 uppercase font-bold">Prix Vente</p>
-                                    <p className="text-xl font-black text-primary">{stock.prix} FCFA</p>
+                              </div>
+                              <div className="grid grid-cols-2 bg-slate-50 p-3 rounded-xl border border-slate-100 gap-2">
+                                 <div>
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Quantité</p>
+                                    {editingStockId === stock.stock_id ? (
+                                       <Input type="number" value={editQuantite} onChange={e => setEditQuantite(e.target.value)} className="h-8 text-sm font-bold bg-white" />
+                                    ) : (
+                                       <p className="text-xl font-black text-slate-700">{stock.quantite}</p>
+                                    )}
+                                 </div>
+                                 <div className="text-right flex flex-col items-end">
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Prix Vente</p>
+                                    {editingStockId === stock.stock_id ? (
+                                       <Input type="number" value={editPrix} onChange={e => setEditPrix(e.target.value)} className="h-8 text-sm font-bold text-right text-primary bg-white w-24" />
+                                    ) : (
+                                       <p className="text-xl font-black text-primary">{stock.prix} FCFA</p>
+                                    )}
                                  </div>
                               </div>
                            </CardContent>
@@ -469,10 +578,14 @@ const Dashboard = () => {
                         <Label>Nom affiché aux clients</Label>
                         <Input value={pharmacyForm.nom} onChange={e => setPharmacyForm({...pharmacyForm, nom: e.target.value})} />
                      </div>
-                     <div className="space-y-2">
-                        <Label>Adresse physique</Label>
-                        <Input value={pharmacyForm.adresse} onChange={e => setPharmacyForm({...pharmacyForm, adresse: e.target.value})} />
-                     </div>
+                      <div className="space-y-2">
+                         <Label>Ville (Cotonou, Calavi, etc.)</Label>
+                         <Input value={pharmacyForm.ville} onChange={e => setPharmacyForm({...pharmacyForm, ville: e.target.value})} placeholder="Ex: Cotonou" />
+                      </div>
+                      <div className="space-y-2">
+                         <Label>Adresse physique détaillée</Label>
+                         <Input value={pharmacyForm.adresse} onChange={e => setPharmacyForm({...pharmacyForm, adresse: e.target.value})} />
+                      </div>
                      <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                            <Label>Téléphone Pharmacie</Label>

@@ -1,4 +1,4 @@
-import { SearchInput } from "@/components/ui/search-input";
+﻿import { SearchInput } from "@/components/ui/search-input";
 import { Button } from "@/components/ui/button";
 import { MapPin, Pill, Search, Loader2 } from "lucide-react";
 import { useState } from "react";

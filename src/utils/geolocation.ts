@@ -1,4 +1,4 @@
-export interface GeolocationResult {
+﻿export interface GeolocationResult {
   latitude: number;
   longitude: number;
   accuracy?: number;

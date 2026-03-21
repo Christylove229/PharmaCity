@@ -1,5 +1,5 @@
-/**
- * CONFIGURATION FEDAPAY POUR MEDOC
+﻿/**
+ * CONFIGURATION FEDAPAY POUR PHARMACITY
  * 
  * Étapes à suivre :
  * 1. Créez un compte sur https://fedapay.com

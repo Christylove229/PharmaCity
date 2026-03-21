@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -219,7 +219,7 @@ const AuthPharmacy = () => {
         <div className="w-full max-w-md">
           <Card className="bg-white/95 backdrop-blur-sm shadow-2xl">
             <CardHeader className="text-center">
-              <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+              <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
                 <ShieldCheck className="h-8 w-8" />
               </div>
               <CardTitle>Vérification de sécurité</CardTitle>
@@ -253,7 +253,7 @@ const AuthPharmacy = () => {
                     </p>
                   )}
                 </div>
-                <Button type="submit" className="w-full bg-blue-600 py-6" disabled={otpLoading || timeLeft === 0}>
+                <Button type="submit" className="w-full bg-green-600 py-6" disabled={otpLoading || timeLeft === 0}>
                   {otpLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Vérifier le code
                 </Button>
@@ -304,7 +304,7 @@ const AuthPharmacy = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white" disabled={resetLoading}>
+                <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white" disabled={resetLoading}>
                   {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Envoyer le code OTP
                 </Button>

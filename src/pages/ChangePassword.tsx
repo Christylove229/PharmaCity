@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,7 +110,7 @@ const ChangePassword = () => {
           </div>
           <CardTitle>Nouveau mot de passe</CardTitle>
           <CardDescription>
-            Choisissez un nouveau mot de passe sécurisé pour votre compte Medoc.
+            Choisissez un nouveau mot de passe sécurisé pour votre compte PharmaCity.
           </CardDescription>
         </CardHeader>
         <CardContent>

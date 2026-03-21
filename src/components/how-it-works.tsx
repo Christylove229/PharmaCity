@@ -1,4 +1,4 @@
-import { Search, MapPin, ShoppingBag } from "lucide-react";
+﻿import { Search, MapPin, ShoppingBag } from "lucide-react";
 
 const steps = [
   {

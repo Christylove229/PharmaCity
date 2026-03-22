@@ -1,4 +1,4 @@
-﻿export interface GeolocationResult {
+export interface GeolocationResult {
   latitude: number;
   longitude: number;
   accuracy?: number;
@@ -159,26 +159,26 @@ const getFallbackLocation = (): GeolocationResult => {
 export const getLocationWithFallback = async (): Promise<GeolocationResult> => {
   try {
     // Tentative 1: Géolocalisation du navigateur (la plus précise)
-    logInfo('🌍 Tentative de géolocalisation navigateur...');
+    // logInfo('🌍 Tentative de géolocalisation navigateur...');
     const browserResult = await getBrowserLocation();
-    logInfo('✅ Position navigateur obtenue:', browserResult);
+    // logInfo('✅ Position navigateur obtenue:', browserResult);
     return browserResult;
   } catch (browserError) {
-    logWarn('⚠️ Échec géolocalisation navigateur:', browserError);
+    // logWarn('⚠️ Échec géolocalisation navigateur:', browserError);
     
     try {
       // Tentative 2: API IP (moins précise mais acceptable)
-      logInfo('🌐 Tentative de géolocalisation IP...');
+      // logInfo('🌐 Tentative de géolocalisation IP...');
       const ipResult = await getIPLocation();
-      logInfo('✅ Position IP obtenue:', ipResult);
+      // logInfo('✅ Position IP obtenue:', ipResult);
       return ipResult;
     } catch (ipError) {
-      logWarn('⚠️ Échec géolocalisation IP:', ipError);
+      // logWarn('⚠️ Échec géolocalisation IP:', ipError);
       
       // Fallback: Position par défaut (Cotonou, Bénin)
-      logInfo('📍 Utilisation de la position fallback (Cotonou, Bénin)');
+      // logInfo('📍 Utilisation de la position fallback (Cotonou, Bénin)');
       const fallbackResult = getFallbackLocation();
-      logInfo('✅ Position fallback utilisée:', fallbackResult);
+      // logInfo('✅ Position fallback utilisée:', fallbackResult);
       return fallbackResult;
     }
   }

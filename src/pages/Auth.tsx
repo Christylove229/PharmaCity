@@ -14,6 +14,13 @@ import {
 
 type AppRole = "client" | "livreur";
 
+// ✅ FIX 2 — Validation mot de passe fort
+const isPasswordStrong = (pwd: string): boolean => {
+  return pwd.length >= 8 &&
+    /[A-Z]/.test(pwd) &&
+    /[0-9]/.test(pwd);
+};
+
 const Auth = () => {
   const [role, setRole] = useState<AppRole | null>(null);
   const [authTab, setAuthTab] = useState("signin");
@@ -25,6 +32,11 @@ const Auth = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+
+  // ✅ FIX 1 — Cooldown mot de passe oublié
+  const [resetCooldown, setResetCooldown] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
   const [showOtpStep, setShowOtpStep] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [otpLoading, setOtpLoading] = useState(false);
@@ -68,7 +80,6 @@ const Auth = () => {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      // Si c'est un livreur qui essaie de se connecter en tant que client
       const { data: livreur } = await supabase
         .from("livreurs")
         .select("status")
@@ -91,7 +102,7 @@ const Auth = () => {
       toast({ title: "Bienvenue ! 👋", description: "Vous êtes connecté." });
       navigate("/");
     } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+      toast({ title: "Erreur de connexion", description: error.message || "Email ou mot de passe incorrect.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -100,6 +111,18 @@ const Auth = () => {
   const handleClientSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    // ✅ FIX 2 — Vérification mot de passe fort
+    if (!isPasswordStrong(password)) {
+      toast({
+        title: "Mot de passe trop faible",
+        description: "8 caractères minimum, une majuscule et un chiffre requis.",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signUp({
         email, password,
@@ -111,14 +134,16 @@ const Auth = () => {
       setShowOtpStep(true);
       setTimeLeft(300);
     } catch (error: any) {
-      toast({ title: "Erreur", description: error.message, variant: "destructive" });
+      toast({ title: "Erreur d'inscription", description: error.message || "Une erreur est survenue lors de la création de votre compte.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ FIX 1 — handleForgotPassword avec cooldown anti-spam
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (resetCooldown) return;
     setResetLoading(true);
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
@@ -126,6 +151,21 @@ const Auth = () => {
       toast({ title: "Code envoyé 📩", description: "Vérifiez votre email." });
       setShowOtpStep(true);
       setTimeLeft(300);
+
+      // Cooldown 60 secondes
+      setResetCooldown(true);
+      setCooldownSeconds(60);
+      const interval = setInterval(() => {
+        setCooldownSeconds(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            setResetCooldown(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
     } catch (error: any) {
       toast({ title: "Erreur", description: error.message, variant: "destructive" });
     } finally {
@@ -200,6 +240,30 @@ const Auth = () => {
   const handleLivreurSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    // ✅ FIX 2 — Vérification mot de passe fort pour livreur
+    if (!isPasswordStrong(livreurForm.password)) {
+      toast({
+        title: "Mot de passe trop faible",
+        description: "8 caractères minimum, une majuscule et un chiffre requis.",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ✅ FIX 3 — Validation numéro de téléphone
+    const phoneRegex = /^\+?[0-9\s]{8,15}$/;
+    if (!phoneRegex.test(livreurForm.telephone)) {
+      toast({
+        title: "Numéro invalide",
+        description: "Entrez un numéro de téléphone valide (ex: +229 00 00 00 00).",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: livreurForm.email,
@@ -230,7 +294,6 @@ const Auth = () => {
 
   // ──────────────────── VIEWS ────────────────────
 
-  // Vue En Attente (livreur)
   if (isPendingReview) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -255,7 +318,6 @@ const Auth = () => {
     );
   }
 
-  // Vue OTP (client)
   if (showOtpStep) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -308,7 +370,6 @@ const Auth = () => {
     );
   }
 
-  // Vue Mot de passe oublié
   if (showForgotPassword) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -328,9 +389,20 @@ const Auth = () => {
                   <Input id="reset-email" type="email" placeholder="votre@email.com"
                     value={resetEmail} onChange={e => setResetEmail(e.target.value)} required />
                 </div>
-                <Button type="submit" className="w-full py-6 bg-green-600 hover:bg-green-700" disabled={resetLoading}>
-                  {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Recevoir le code OTP"}
+
+                {/* ✅ FIX 1 — Bouton avec cooldown affiché */}
+                <Button
+                  type="submit"
+                  className="w-full py-6 bg-green-600 hover:bg-green-700"
+                  disabled={resetLoading || resetCooldown}
+                >
+                  {resetLoading
+                    ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    : resetCooldown
+                    ? `Réessayer dans ${cooldownSeconds}s`
+                    : "Recevoir le code OTP"}
                 </Button>
+
                 <button type="button" onClick={() => setShowForgotPassword(false)}
                   className="w-full text-sm text-center text-slate-500 hover:text-green-600">
                   <ArrowLeft className="h-4 w-4 inline mr-1" /> Retour à la connexion
@@ -451,8 +523,20 @@ const Auth = () => {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="signup-password">Créer un mot de passe</Label>
-                      <Input id="signup-password" type="password" placeholder="6 caractères minimum"
-                        value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+                      <Input id="signup-password" type="password" placeholder="8 caractères, 1 majuscule, 1 chiffre"
+                        value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
+                      {/* ✅ FIX 2 — Indicateur visuel des règles */}
+                      <ul className="text-xs text-slate-400 space-y-1 mt-1">
+                        <li className={password.length >= 8 ? "text-green-600" : ""}>
+                          {password.length >= 8 ? "✓" : "○"} 8 caractères minimum
+                        </li>
+                        <li className={/[A-Z]/.test(password) ? "text-green-600" : ""}>
+                          {/[A-Z]/.test(password) ? "✓" : "○"} Une lettre majuscule
+                        </li>
+                        <li className={/[0-9]/.test(password) ? "text-green-600" : ""}>
+                          {/[0-9]/.test(password) ? "✓" : "○"} Un chiffre
+                        </li>
+                      </ul>
                     </div>
                     <Button type="submit" className="w-full py-7 text-lg bg-green-600 hover:bg-green-700 shadow-xl mt-4" disabled={loading}>
                       {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Créer mon compte"}
@@ -496,7 +580,6 @@ const Auth = () => {
                 <TabsTrigger value="signup" className="rounded-lg py-3">Devenir partenaire</TabsTrigger>
               </TabsList>
 
-              {/* Connexion Livreur */}
               <TabsContent value="signin">
                 <form onSubmit={handleLivreurSignIn} className="space-y-6">
                   <div className="space-y-2">
@@ -515,7 +598,6 @@ const Auth = () => {
                 </form>
               </TabsContent>
 
-              {/* Inscription Livreur (2 étapes) */}
               <TabsContent value="signup">
                 <form onSubmit={handleLivreurSignUp} className="space-y-6">
                   {livreurStep === 1 ? (
@@ -537,8 +619,20 @@ const Auth = () => {
                       </div>
                       <div className="space-y-2">
                         <Label className="flex items-center gap-2"><Lock className="w-4 h-4 text-green-600" /> Mot de passe</Label>
-                        <Input required disabled={loading} type="password" minLength={6}
+                        <Input required disabled={loading} type="password" minLength={8}
                           value={livreurForm.password} onChange={e => setLivreurForm({ ...livreurForm, password: e.target.value })} />
+                        {/* ✅ FIX 2 — Indicateur visuel pour livreur aussi */}
+                        <ul className="text-xs text-slate-400 space-y-1 mt-1">
+                          <li className={livreurForm.password.length >= 8 ? "text-green-600" : ""}>
+                            {livreurForm.password.length >= 8 ? "✓" : "○"} 8 caractères minimum
+                          </li>
+                          <li className={/[A-Z]/.test(livreurForm.password) ? "text-green-600" : ""}>
+                            {/[A-Z]/.test(livreurForm.password) ? "✓" : "○"} Une lettre majuscule
+                          </li>
+                          <li className={/[0-9]/.test(livreurForm.password) ? "text-green-600" : ""}>
+                            {/[0-9]/.test(livreurForm.password) ? "✓" : "○"} Un chiffre
+                          </li>
+                        </ul>
                       </div>
                       <Button type="button" onClick={() => setLivreurStep(2)}
                         className="w-full bg-green-600 hover:bg-green-700 py-6 text-lg font-bold shadow-lg shadow-green-500/20">

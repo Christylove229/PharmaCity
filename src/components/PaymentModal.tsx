@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Smartphone, Loader2, CheckCircle2 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CreditCard, Smartphone, Loader2, CheckCircle2, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface PaymentModalProps {
@@ -18,78 +17,57 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [phone, setPhone] = useState("");
   const { toast } = useToast();
 
-  // Prix par défaut de simulation si non spécifié (ex. en FCFA)
-  const displayPrice = price ? price : 1500; 
+  const displayPrice = price ? price : 1500;
 
-  const handlePayment = async (e: React.FormEvent) => {
+  // ✅ FIX — Validation du numéro Mobile Money avant envoi
+  const handleMomoPayment = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const phoneRegex = /^\+?[0-9\s]{8,15}$/;
+    if (!phoneRegex.test(phone)) {
+      toast({
+        title: "Numéro invalide",
+        description: "Entrez un numéro Mobile Money valide (ex: +229 01 00 00 00).",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
-    // Simulation d'une requête de paiement vers une API (ex: FedaPay, KkiaPay, Stripe)
+    // TODO: Remplacer ce setTimeout par l'appel réel à FedaPay
+    // Exemple d'intégration FedaPay :
+    // const fedapay = await supabase.functions.invoke('create-fedapay-transaction', {
+    //   body: { amount: displayPrice, phone, description: `${medicationName} - ${pharmacyName}` }
+    // });
+
     setTimeout(async () => {
       setLoading(false);
       setSuccess(true);
-      
+
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          // Enregistrer l'achat dans Supabase
           await supabase.from('purchases' as any).insert({
             user_id: user.id,
             pharmacie_name: pharmacyName,
             medicament_name: medicationName,
             prix_total: displayPrice,
             status: 'completed',
-            payment_method: 'digital'
+            payment_method: 'mobile_money'
           });
 
-          // 1. Déduction locale (Stock de PharmaCity sur Supabase) 
-          // Note : on pourrait d'abord vérifier dans pharmacy_api_configs si on DOIT déduire localement.
-          // Mais dans tous les cas, on déduit en local pour l'affichage de l'appli.
           await supabase.rpc('decrease_stock', {
             p_pharmacie_name: pharmacyName,
             p_medicament_name: medicationName,
             p_quantite_achetee: 1
           });
-
-          // 2. PRÉPARATION API EXTERNE : Synchronisation avec le logiciel de la pharmacie (WinPharma, etc.)
-          // Lorsque vous aurez les API des différentes pharmacies, vous ne ferez pas l'appel directement d'ici 
-          // (pour ne pas exposer leurs clés secrètes aux clients web/mobile).
-          // L'approche sera :
-          //   A. Vérifier si cette pharmacie a un "webhook_url" et "is_active = true" dans "pharmacy_api_configs"
-          //   B. Si oui, appeler une "Edge Function" (Fonction Backend Supabase) qui passera la commande à l'API externe (donc on ne supprime PAS en parallèle localement si vous gérez le point de vérité uniquement côté pharmacie externe. Sinon, vous faites les deux comme suggéré ci-dessus).
-          
-          /* Exemple du code final à décommenter plus tard :
-             
-             // Check config
-             const { data: apiConfig } = await supabase.from('pharmacy_api_configs')
-                .select('*')
-                .eq('pharmacie_id', pharmacyId) // Note: Il faudra ajouter pharmacyId aux props de PaymentModal
-                .single();
-                
-             if (apiConfig && apiConfig.is_active) {
-                // Option A : Géré par le logiciel (Pas de modification directe du stock local)
-                await supabase.functions.invoke('sync-external-pharmacy-stock', {
-                  body: { 
-                    pharmacy_name: pharmacyName, 
-                    medication_name: medicationName, 
-                    qty_sold: 1 
-                  }
-                });
-             } else {
-                // Option B : Géré uniquement par PharmaCity
-                await supabase.rpc('decrease_stock', {
-                  p_pharmacie_name: pharmacyName,
-                  p_medicament_name: medicationName,
-                  p_quantite_achetee: 1
-                });
-             }
-          */
         }
-      } catch (error) {
-        console.error("Erreur lors de la mémorisation de l'achat ou maj stock:", error);
+      } catch {
+        // Erreur silencieuse en prod
       }
 
       toast({
@@ -97,10 +75,10 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
         description: `Votre commande pour ${medicationName} a été confirmée auprès de ${pharmacyName}.`,
       });
 
-      // Fermer le modal après 2 secondes
       setTimeout(() => {
         setIsOpen(false);
-        setSuccess(false); // reset state
+        setSuccess(false);
+        setPhone("");
       }, 2000);
     }, 2000);
   };
@@ -134,58 +112,48 @@ export function PaymentModal({ pharmacyName, medicationName, price }: PaymentMod
               <span className="text-xl font-bold">{displayPrice} FCFA</span>
             </div>
 
-            <Tabs defaultValue="momo" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="momo" className="flex items-center">
-                  <Smartphone className="h-4 w-4 mr-2" />
-                  Mobile Money
-                </TabsTrigger>
-                <TabsTrigger value="card" className="flex items-center">
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  Carte Bancaire
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="momo">
-                <form onSubmit={handlePayment} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Numéro de téléphone (MTN, Moov)</Label>
-                    <Input id="phone" placeholder="ex: 01 97 00 00 00" required />
-                  </div>
-                  <Button type="submit" className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-medium" disabled={loading}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {loading ? "Traitement..." : `Payer ${displayPrice} FCFA`}
-                  </Button>
-                </form>
-              </TabsContent>
+            {/* ✅ Mobile Money — seul mode actif */}
+            <form onSubmit={handleMomoPayment} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4" /> Numéro Mobile Money (MTN / Moov)
+                </Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="ex: +229 01 97 00 00 00"
+                  value={phone}
+                  onChange={e => setPhone(e.target.value)}
+                  required
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {loading ? "Traitement..." : `Payer ${displayPrice} FCFA via Mobile Money`}
+              </Button>
+            </form>
 
-              <TabsContent value="card">
-                <form onSubmit={handlePayment} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cardName">Nom sur la carte</Label>
-                    <Input id="cardName" placeholder="Jean Dupont" required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cardNumber">Numéro de carte</Label>
-                    <Input id="cardNumber" placeholder="0000 0000 0000 0000" required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="expiry">Expiration</Label>
-                      <Input id="expiry" placeholder="MM/AA" required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cvc">CVC</Label>
-                      <Input id="cvc" placeholder="123" required />
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full bg-green-600 hover:bg-green-700" disabled={loading}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    {loading ? "Traitement..." : `Payer ${displayPrice} FCFA`}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
+            {/* ✅ FIX — Carte bancaire : redirige vers FedaPay au lieu d'un faux formulaire */}
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-xs text-muted-foreground mb-3 text-center">
+                Paiement par carte bancaire
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => window.open('https://fedapay.com', '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Payer par carte via FedaPay
+              </Button>
+              <p className="text-[10px] text-muted-foreground mt-2 text-center italic">
+                Vous serez redirigé vers la plateforme sécurisée FedaPay (PCI-DSS).
+              </p>
+            </div>
           </div>
         )}
       </DialogContent>

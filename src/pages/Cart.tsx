@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "@/context/CartContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Pill, 
   Trash2, 
@@ -31,11 +33,11 @@ const Cart = () => {
   const [clientGps, setClientGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const DELIVERY_FEE = 1000; // Forfait livraison
+  const DELIVERY_FEE = 1000;
   const finalTotal = totalAmount + appCommission + (deliveryMode === 'delivery' ? DELIVERY_FEE : 0);
 
-  // Grouper les articles par pharmacie pour la clarté
   const groupedItems = cart.reduce((acc, item) => {
     if (!acc[item.pharmacie_nom]) {
       acc[item.pharmacie_nom] = [];
@@ -69,80 +71,97 @@ const Cart = () => {
   };
 
   const handleCheckout = async () => {
-    if (deliveryMode === 'delivery' && !deliveryInfo.adresse) {
-      alert("Veuillez saisir une adresse de livraison !");
+    // ✅ FIX 1 — Validation téléphone de livraison
+    if (deliveryMode === 'delivery') {
+      if (!deliveryInfo.adresse) {
+        toast({ title: "Adresse manquante", description: "Veuillez saisir une adresse de livraison.", variant: "destructive" });
+        return;
+      }
+      const phoneRegex = /^\+?[0-9\s]{8,15}$/;
+      if (deliveryInfo.telephone && !phoneRegex.test(deliveryInfo.telephone)) {
+        toast({ title: "Numéro invalide", description: "Vérifiez le numéro de téléphone du destinataire.", variant: "destructive" });
+        return;
+      }
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      toast({ title: "Session expirée", description: "Veuillez vous reconnecter.", variant: "destructive" });
+      navigate("/auth");
       return;
     }
 
-    const randomCode = Math.floor(Math.random() * 900000 + 100000);
+    // ✅ FIX 2 — Code généré côté serveur via la fonction SQL generate_pickup_code()
+    const { data: codeData, error: codeError } = await supabase
+      .rpc('generate_pickup_code');
 
-    const { data: { session } } = await import("@/integrations/supabase/client")
-      .then(m => m.supabase.auth.getSession());
-
-    if (session) {
-      const { supabase } = await import("@/integrations/supabase/client");
-
-      // Grouper les montants par pharmacie ID pour générer les commandes distinctes
-      const ordersToInsert = [];
-      const groupedByPharmacie = cart.reduce((acc, item) => {
-         if (!acc[item.pharmacie_id]) {
-            acc[item.pharmacie_id] = 0;
-         }
-         acc[item.pharmacie_id] += (item.prix * item.quantite);
-         return acc;
-      }, {} as Record<string, number>);
-
-      // On insère une ligne "orders" *par pharmacie* impliquée dans le panier
-      for (const [pharmacieId, totalBrut] of Object.entries(groupedByPharmacie)) {
-         const pharmacyCommission = Math.floor(totalBrut * 0.01);
-         const pharmacyNet = Math.floor(totalBrut * 0.99);
-         
-         ordersToInsert.push({
-            user_id: session.user.id,
-            pharmacie_id: pharmacieId,
-            delivery_type: deliveryMode,
-            delivery_address: deliveryMode === 'delivery' ? deliveryInfo.adresse : null,
-            delivery_city: deliveryInfo.quartier || null,
-            destinataire_nom: deliveryMode === 'delivery' ? deliveryInfo.destinataire : null,
-            destinataire_telephone: deliveryMode === 'delivery' ? deliveryInfo.telephone : null,
-            client_latitude: clientGps?.lat ?? null,
-            client_longitude: clientGps?.lng ?? null,
-            total_amount: totalBrut + (deliveryMode === 'delivery' ? DELIVERY_FEE : 0),
-            app_commission: pharmacyCommission,
-            pharmacy_net_amount: pharmacyNet,
-            delivery_fee: deliveryMode === 'delivery' ? DELIVERY_FEE : 0,
-            pickup_code: randomCode.toString(),
-            status: 'pending',
-            delivery_status: deliveryMode === 'delivery' ? 'not_started' : null,
-         });
-      }
-
-      const { data: insertedOrders, error } = await supabase.from('orders').insert(ordersToInsert).select();
-      if (error) {
-        console.error("Erreur insertion commande:", error);
-        alert("Une erreur serveur empêche la finalisation de la commande : " + error.message);
-        return;
-      }
-
-      if (insertedOrders) {
-        const orderItemsToInsert = [];
-        for (const order of insertedOrders) {
-          const itemsForOrder = cart.filter(item => item.pharmacie_id === order.pharmacie_id);
-          for (const item of itemsForOrder) {
-            orderItemsToInsert.push({
-              order_id: order.id,
-              stock_id: item.stock_id,
-              medicament_nom: item.medicament_nom,
-              quantite: item.quantite,
-              prix_unitaire: item.prix
-            });
-          }
-        }
-        await supabase.from('order_items').insert(orderItemsToInsert);
-      }
+    if (codeError || !codeData) {
+      toast({ title: "Erreur", description: "Impossible de générer le code de retrait. Réessayez.", variant: "destructive" });
+      return;
     }
 
-    navigate(`/order-success?code=${randomCode}&mode=${deliveryMode}`);
+    const secureCode = codeData as string;
+
+    const ordersToInsert = [];
+    const groupedByPharmacie = cart.reduce((acc, item) => {
+      if (!acc[item.pharmacie_id]) {
+        acc[item.pharmacie_id] = 0;
+      }
+      acc[item.pharmacie_id] += (item.prix * item.quantite);
+      return acc;
+    }, {} as Record<string, number>);
+
+    for (const [pharmacieId, totalBrut] of Object.entries(groupedByPharmacie)) {
+      const pharmacyCommission = Math.floor(totalBrut * 0.01);
+      const pharmacyNet = Math.floor(totalBrut * 0.99);
+      
+      ordersToInsert.push({
+        user_id: session.user.id,
+        pharmacie_id: pharmacieId,
+        delivery_type: deliveryMode,
+        delivery_address: deliveryMode === 'delivery' ? deliveryInfo.adresse : null,
+        delivery_city: deliveryInfo.quartier || null,
+        destinataire_nom: deliveryMode === 'delivery' ? deliveryInfo.destinataire : null,
+        destinataire_telephone: deliveryMode === 'delivery' ? deliveryInfo.telephone : null,
+        client_latitude: clientGps?.lat ?? null,
+        client_longitude: clientGps?.lng ?? null,
+        total_amount: totalBrut + (deliveryMode === 'delivery' ? DELIVERY_FEE : 0),
+        app_commission: pharmacyCommission,
+        pharmacy_net_amount: pharmacyNet,
+        delivery_fee: deliveryMode === 'delivery' ? DELIVERY_FEE : 0,
+        pickup_code: secureCode,  // ✅ Code sécurisé venant du serveur
+        status: 'pending',
+        delivery_status: deliveryMode === 'delivery' ? 'not_started' : null,
+      });
+    }
+
+    const { data: insertedOrders, error } = await supabase.from('orders').insert(ordersToInsert).select();
+
+    if (error) {
+      // ✅ FIX 3 — Plus d'alert() avec message d'erreur brut
+      toast({ title: "Erreur lors de la commande", description: "Une erreur est survenue. Veuillez réessayer.", variant: "destructive" });
+      return;
+    }
+
+    if (insertedOrders) {
+      const orderItemsToInsert = [];
+      for (const order of insertedOrders) {
+        const itemsForOrder = cart.filter(item => item.pharmacie_id === order.pharmacie_id);
+        for (const item of itemsForOrder) {
+          orderItemsToInsert.push({
+            order_id: order.id,
+            stock_id: item.stock_id,
+            medicament_nom: item.medicament_nom,
+            quantite: item.quantite,
+            prix_unitaire: item.prix
+          });
+        }
+      }
+      await supabase.from('order_items').insert(orderItemsToInsert);
+    }
+
+    navigate(`/order-success?code=${secureCode}&mode=${deliveryMode}`);
     clearCart();
   };
 
@@ -154,13 +173,12 @@ const Cart = () => {
             <ArrowLeft className="h-4 w-4 mr-2" /> Retour à la recherche
           </Button>
           <h1 className="text-3xl font-extrabold flex items-center">
-             Mon Panier <Badge className="ml-3 bg-primary">{cart.length}</Badge>
+            Mon Panier <Badge className="ml-3 bg-primary">{cart.length}</Badge>
           </h1>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            {/* Mode de réception */}
             <Card className="border-none shadow-md">
               <CardHeader>
                 <CardTitle className="text-xl">Mode de réception</CardTitle>
@@ -205,7 +223,7 @@ const Cart = () => {
                       </div>
                       <div className="space-y-2">
                         <Label className="flex items-center gap-2" htmlFor="tel-destinataire">
-                           Numéro de téléphone (À appeler)
+                          Numéro de téléphone (À appeler)
                         </Label>
                         <Input 
                           id="tel-destinataire"
@@ -236,7 +254,6 @@ const Cart = () => {
                       />
                     </div>
 
-                    {/* Bouton partager position GPS */}
                     <button
                       type="button"
                       onClick={getClientLocation}
@@ -317,12 +334,12 @@ const Cart = () => {
                 </div>
                 
                 <div className="bg-green-50 p-4 rounded-xl border border-green-100 mt-4 space-y-2">
-                   <div className="flex items-center text-green-700 font-bold text-[10px] uppercase">
-                      <AlertCircle className="h-3 w-3 mr-1" /> Sécurité Paiement
-                   </div>
-                   <p className="text-[10px] text-green-600 leading-relaxed italic">
-                      Votre argent est sécurisé par PharmaCity et reversé après réception du médicament.
-                   </p>
+                  <div className="flex items-center text-green-700 font-bold text-[10px] uppercase">
+                    <AlertCircle className="h-3 w-3 mr-1" /> Sécurité Paiement
+                  </div>
+                  <p className="text-[10px] text-green-600 leading-relaxed italic">
+                    Votre argent est sécurisé par PharmaCity et reversé après réception du médicament.
+                  </p>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col space-y-3">

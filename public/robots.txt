@@ -1,3 +1,14 @@
+User-agent: *
+Disallow: /admin
+Disallow: /admin-pharmacity
+Disallow: /dashboard
+Disallow: /dashboard/livreur
+Disallow: /auth
+Disallow: /cart
+Disallow: /order-success
+Allow: /
+
+# Les bots de recherche sont autorisés pour le reste
 User-agent: Googlebot
 Allow: /
 
@@ -8,7 +19,4 @@ User-agent: Twitterbot
 Allow: /
 
 User-agent: facebookexternalhit
-Allow: /
-
-User-agent: *
 Allow: /

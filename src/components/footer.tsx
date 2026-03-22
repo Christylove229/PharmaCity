@@ -74,7 +74,7 @@ const Footer = () => {
 
         <div className="border-t border-white/20 mt-8 sm:mt-12 pt-6 sm:pt-8 text-center">
           <p className="text-xs sm:text-sm text-white/60">
-            © 2025 PharmaCity. Tous droits réservés. Fait avec ❤️ pour le Bénin.
+            © 2026 PharmaCity. Tous droits réservés. Fait pour le Bénin.
           </p>
         </div>
       </div>
